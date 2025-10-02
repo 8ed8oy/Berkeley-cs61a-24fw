@@ -104,8 +104,7 @@ def get_key_distances():
     return {key : value * 8 / max_value for key, value in key_distance.items()}
 
 def count(f):
-    """Keeps track of the number of times a function f is called using the
-    variable call_count
+    """Keeps track of the number of times a function f is called using the variable call_count
 
     >>> def factorial(n):
     ...     if n <= 1:

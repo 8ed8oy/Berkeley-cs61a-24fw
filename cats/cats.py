@@ -140,7 +140,6 @@ def wpm(typed: str, elapsed: int) -> float:
 def memo(f):
     """A general memoization decorator."""
     cache = {}
-
     def memoized(*args):
         immutable_args = deep_convert_to_tuple(args)  # convert *args into a tuple representation
         if immutable_args not in cache:
@@ -155,12 +154,22 @@ def memo(f):
 def memo_diff(diff_function):
     """A memoization function."""
     cache = {}
+    counted_diff = count(diff_function)
 
     def memoized(typed, source, limit):
         # BEGIN PROBLEM EC
-        "*** YOUR CODE HERE ***"
+        counted_diff.call_count = memoized.call_count
+        key = (typed, source)
+        if key not in cache or limit > cache[key][1]:
+            result = counted_diff(typed, source, limit)
+            cache[key] = (result, limit)
+        else:
+            result = cache[key][0]
+        memoized.call_count = counted_diff.call_count
+        return result
         # END PROBLEM EC
 
+    memoized.call_count = counted_diff.call_count
     return memoized
 
 
@@ -169,6 +178,7 @@ def memo_diff(diff_function):
 ###########
 
 
+@memo
 def autocorrect(typed_word: str, word_list: list[str], diff_function, limit: int) -> str:
     """Returns the element of WORD_LIST that has the smallest difference
     from TYPED_WORD based on DIFF_FUNCTION. If multiple words are tied for the smallest difference,
@@ -242,7 +252,7 @@ def furry_fixes(typed: str, source: str, limit: int) -> int:
     return current_diff + rest_diff
     # END PROBLEM 6
 
-
+@memo_diff
 def minimum_mewtations(typed: str, source: str, limit: int) -> int:
     """A diff function for autocorrect that computes the edit distance from TYPED to SOURCE.
     This function takes in a string TYPED, a string SOURCE, and a number LIMIT.
@@ -425,7 +435,7 @@ def get_time(times, player_num, word_index):
     return times[player_num][word_index]
 
 
-enable_multiplayer = False  # Change to True when you're ready to race.
+enable_multiplayer = True  # Change to True when you're ready to race.
 
 ##########################
 # Command Line Interface #
@@ -480,4 +490,3 @@ def run(*args):
     args = parser.parse_args()
     if args.t:
         run_typing_test(args.topic)
-        

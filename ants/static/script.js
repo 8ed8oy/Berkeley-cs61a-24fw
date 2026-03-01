@@ -4,7 +4,13 @@ const moveBeeAnimationDuration = 1.2; // seconds
 const throwLeafAnimationDuration = 0.75; // seconds
 const insectDieAnimationDuration = 0.6; // seconds
 const insectsHurtAnimationDuration = 0.2; // seconds
-const insectsActionInterval = 4; // Insects take actions every 5 seconds
+const insectsActionInterval = 5; // Slow down action loop to reduce load
+const statsUpdateInterval = 250; // Throttle stats polling to lighten the UI thread
+let statsUpdateInFlight = false; // Prevent overlapping stats requests that stall Edge
+let actionIntervalId = null;
+let statsIntervalId = null;
+let isPaused = false;
+window.shovelSelected = false;
 
 
 function inLobby(data) {
@@ -42,17 +48,139 @@ function startGame() {
         let startButton = document.querySelector('.start-button');
         startButton.remove(); // Remove start button
 
-        formatAntButtons(data.ant_types); // Set up ant buttons according to available ant types
+            formatAntButtons(data.ant_types, data.ant_costs); // Set up ant buttons according to available ant types
         formatGameGrid(data.dimensions_x, data.dimensions_y, data.wet_places); // Set up game grid
+            populateInsects(data.insects);
         playMusic();
+        bindControlButtons();
+        bindShovelButton();
+        attachAntSelectionReset();
 
-        // Set calling these functions every 4 seconds and 50 milliseconds.
-        setInterval(insectsTakeActions, insectsActionInterval * 1000);
-        setInterval(updateStats, 50);
+        startLoops();
+        setToggleButtonLabel('Pause');
     })
     .catch(error => {
         console.error('Error:', error);
     });
+}
+
+
+function startLoops() {
+    // Start periodic actions and stats polling
+    clearLoops();
+    actionIntervalId = setInterval(insectsTakeActions, insectsActionInterval * 1000);
+    statsIntervalId = setInterval(updateStats, statsUpdateInterval);
+    isPaused = false;
+}
+
+
+function clearLoops() {
+    if (actionIntervalId) {
+        clearInterval(actionIntervalId);
+        actionIntervalId = null;
+    }
+    if (statsIntervalId) {
+        clearInterval(statsIntervalId);
+        statsIntervalId = null;
+    }
+}
+
+
+function pauseGame() {
+    if (isPaused) return;
+    clearLoops();
+    isPaused = true;
+    setToggleButtonLabel('Start');
+    fetch('/save_state', { method: 'POST' });
+}
+
+
+function resumeGame() {
+    if (!isPaused) return;
+    startLoops();
+    setToggleButtonLabel('Pause');
+}
+
+
+function restartGame() {
+    clearLoops();
+    fetch('/restart_game', { method: 'POST' })
+        .then(() => {
+            window.location.reload();
+        });
+}
+
+
+function togglePause() {
+    if (isPaused) {
+        resumeGame();
+    } else {
+        pauseGame();
+    }
+}
+
+
+function bindControlButtons() {
+    let toggleBtn = document.querySelector('.toggle-play-btn');
+    let restartBtn = document.querySelector('.restart-btn');
+    let saveBtn = document.querySelector('.save-btn');
+    let clearBtn = document.querySelector('.clear-cache-btn');
+    if (toggleBtn) toggleBtn.addEventListener('click', togglePause);
+    if (restartBtn) restartBtn.addEventListener('click', restartGame);
+    if (saveBtn) saveBtn.addEventListener('click', manualSave);
+    if (clearBtn) clearBtn.addEventListener('click', clearCache);
+}
+
+
+function setToggleButtonLabel(text) {
+    let toggleBtn = document.querySelector('.toggle-play-btn');
+    if (toggleBtn) toggleBtn.innerText = text;
+}
+
+
+function manualSave() {
+    fetch('/save_state', { method: 'POST' });
+}
+
+
+function bindShovelButton() {
+    let shovelBtn = document.getElementById('shovel-btn');
+    if (!shovelBtn) return;
+    shovelBtn.addEventListener('click', () => {
+           window.shovelSelected = true;
+        highlightShovel(true);
+        // Deselect ants
+        for (let ant in selectedAntsTable) {
+            selectedAntsTable[ant] = false;
+            let antButton = document.getElementById(ant);
+            if (antButton) {
+                antButton.style.borderWidth = '2px';
+                antButton.style.borderColor = 'rgba(54, 57, 235, 0.2)';
+            }
+        }
+    });
+}
+
+
+function attachAntSelectionReset() {
+    let buttons = document.getElementsByClassName('ant-btn');
+    for (let i = 0; i < buttons.length; i++) {
+        if (buttons[i].id === 'shovel-btn') {
+            continue;
+        }
+        buttons[i].addEventListener('click', () => {
+                window.shovelSelected = false;
+            highlightShovel(false);
+        });
+    }
+}
+
+
+function highlightShovel(selected) {
+    let shovelBtn = document.getElementById('shovel-btn');
+    if (!shovelBtn) return;
+    shovelBtn.style.borderWidth = selected ? '5px' : '2px';
+    shovelBtn.style.borderColor = selected ? 'rgba(200, 80, 20, 0.9)' : 'rgba(54, 57, 235, 0.2)';
 }
 
 
@@ -170,23 +298,32 @@ function insectsTakeActions() {
 function updateStats() {
     /* Called on interval. Ask server for food count and turn count */
 
+    if (statsUpdateInFlight) {
+        return; // Avoid piling up requests if Edge lags
+    }
+    statsUpdateInFlight = true;
+
     fetch('/update_stats') // Triger update_stats signal in server
     .then(response => response.json())
     .then(data => { // Handle data from server
-
-        setTimeout(() => { // Use time out to avoid crashes
-            let food = data.food;
-            let turn = data.turn;
-            food_display = document.querySelector('.display-food-div');
-            food_display.innerText = `Food: ${food}`;
-            food_display = document.querySelector('.display-turn-div');
-            food_display.innerText = `Turn: ${turn}`;
-            adjustAntButtons(data.available_ants); // Update GUI on what ants are available
-        }, 50);
+        let food = data.food;
+        let turn = data.turn;
+        let maxTurn = data.max_turn;
+        let food_display = document.querySelector('.display-food-div');
+        food_display.innerText = `Food: ${food}`;
+        food_display = document.querySelector('.display-turn-div');
+        food_display.innerText = `Turn: ${turn}`;
+        let max_turn_display = document.querySelector('.max-turn-display');
+        if (max_turn_display) {
+            max_turn_display.innerText = `Max Turn: ${maxTurn}`;
+        }
+        adjustAntButtons(data.available_ants); // Update GUI on what ants are available
     })
-
     .catch(error => {
         console.error('Error:', error);
+    })
+    .finally(() => {
+        statsUpdateInFlight = false;
     });
 }
 
@@ -247,4 +384,17 @@ socket.on('onInsectDeath', removeInsect);
 socket.on('endGame', endGame);
 socket.on('throwAt', throwAt);
 socket.on('reduceHealth', reduceHealth);
+
+
+// Persist state on tab close
+window.addEventListener('beforeunload', function() {
+    navigator.sendBeacon('/save_state');
+    clearLoops();
+});
+
+// Clear cache/save manually from UI
+function clearCache() {
+    fetch('/clear_cache', { method: 'POST' })
+        .then(() => window.location.reload());
+}
 

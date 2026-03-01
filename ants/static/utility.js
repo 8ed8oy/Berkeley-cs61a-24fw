@@ -1,15 +1,46 @@
-function formatAntButtons(antTypes) {
+const antDescriptions = {
+    Harvester: '每回合+1食物',
+    Thrower: '基础远程1伤害，无射程无限',
+    Short: '射程≤3格的投掷蚂蚁',
+    Long: '射程≥5格的投掷蚂蚁',
+    Fire: '被击败时对同格蜂造成额外爆炸伤害',
+    Wall: '高血量阻挡',
+    Hungry: '吞噬同格蜂，冷却2回合',
+    Bodyguard: '容器，可保护并携带一只蚂蚁',
+    Tank: '容器，溅射1点伤害并保护同格蚂蚁',
+    Scuba: '防水投掷蚂蚁，可放水里',
+    Slow: '使目标减速5回合，不造成伤害',
+    Scary: '使目标后退2步，不造成伤害',
+    Ninja: '不阻挡路径，对经过的蜂造成1伤害',
+    Laser: '沿直线递减伤害，穿透敌我',
+    Queen: '唯一，双倍身后蚂蚁伤害并投掷'
+};
+
+
+function formatAntButtons(antTypes, antCosts) {
     // Create buttons for each type of ant
 
     let antSection = document.querySelector('.ants-section');
     for (i = 0; i < antTypes.length; i++) {
+        let name = antTypes[i];
         let antButton = document.createElement('button');
         antButton.setAttribute('class', `ant-btn`);
-        antButton.setAttribute('id', antTypes[i]);
-        antButton.style.backgroundImage = `url('../static/assets/ants/${antTypes[i]}.gif')`;
+        antButton.setAttribute('id', name);
+        antButton.style.backgroundImage = `url('../static/assets/ants/${name}.gif')`;
+        let costText = antCosts && antCosts[name] !== undefined ? ` (食物:${antCosts[name]})` : '';
+        antButton.title = (antDescriptions[name] || '蚂蚁') + costText;
         antSection.appendChild(antButton);
-        selectedAntsTable[antTypes[i]] = false; // Add key value pairs to table (key = ant name, val = whether it's selected)
+        selectedAntsTable[name] = false; // Add key value pairs to table (key = ant name, val = whether it's selected)
     }
+
+    // Add shovel button to remove placed ants
+    let shovelButton = document.createElement('button');
+    shovelButton.setAttribute('class', 'ant-btn shovel-btn');
+    shovelButton.setAttribute('id', 'shovel-btn');
+    shovelButton.innerText = 'Shovel';
+    shovelButton.title = '铲除已放置的蚂蚁';
+    antSection.appendChild(shovelButton);
+
     addListenerToAnts(); // Add event listener to ant button
 }
 
@@ -116,6 +147,8 @@ function makeAntSelector(antName) {
                 antButton.style.borderColor = 'rgba(54, 57, 235, 0.2)';
             }
         }
+        window.shovelSelected = false;
+        highlightShovel(false);
     }
 
     return antSelector;
@@ -146,6 +179,26 @@ function makeOnClickTile(buttonID) {
     /* Returns a func, which is called when tile button is clicked */
 
     function onClickTile() {
+        // Shovel mode removes an ant instead of placing
+        if (window.shovelSelected) {
+            fetch('/remove_ant', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ pos: buttonID }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.removed) {
+                    removeAntFromTile(buttonID);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+            return;
+        }
 
         // Check if an ant is selected
         selectedAnt = getSelectedAnt();
@@ -176,7 +229,6 @@ function makeOnClickTile(buttonID) {
         .catch(error => {
             console.error('Error:', error);
         });
-
     }
 
     return onClickTile;
@@ -189,6 +241,38 @@ function addListenerToTile() {
     for (i = 0; i < buttons.length; i++) {
         buttons[i].addEventListener('click', makeOnClickTile(buttons[i].id));
     }
+}
+
+
+function populateInsects(insects) {
+    if (!insects || insects.length === 0) return;
+    // Clear any prior renders to avoid duplicates
+    let buttons = document.getElementsByClassName('tile-btn');
+    for (let i = 0; i < buttons.length; i++) {
+        let imgs = buttons[i].querySelectorAll('.insect-on-tile-img');
+        imgs.forEach(img => img.remove());
+    }
+    insects.forEach(item => {
+        let placeId = `${item.pos[0]}-${item.pos[1]}`;
+        if (item.kind === 'ant') {
+            placeAnt(item.name, placeId, item.id);
+        } else if (item.kind === 'bee') {
+            placeBee(item.name, placeId, item.id);
+        }
+    });
+}
+
+
+function placeBee(beeName, placeId, bee_id) {
+    let destination = document.getElementById(placeId);
+    if (!destination) return;
+    let beeImg = document.createElement('img');
+    destination.appendChild(beeImg);
+    beeImg.setAttribute('class', 'insect-on-tile-img');
+    beeImg.setAttribute('id', bee_id);
+    beeImg.setAttribute('src', `../static/assets/bees/${beeName}.gif`);
+    beeImg.style.zIndex = '5';
+    beeImg.style.top = `${(destination.offsetHeight - beeImg.offsetHeight) / 2}px`;
 }
 
 
@@ -206,6 +290,15 @@ function placeAnt(antName, place, ant_id) {
     image.style.top = `50%`;
     image.style.left = `50%`;
     image.style.transform = 'translate(-50%, -50%)';
+}
+
+
+function removeAntFromTile(place) {
+    // Remove the first ant image on a tile, if present
+    let button = document.getElementById(place);
+    if (!button) return;
+    let images = button.querySelectorAll('.insect-on-tile-img');
+    images.forEach(img => img.remove());
 }
 
 

@@ -282,7 +282,7 @@ class WallAnt(Ant):
     implemented = True 
     food_cost = 4
 
-    def __init__(self, health=4):
+    def __init__(self, health=6):
         """Create an Ant with a HEALTH quantity."""
         super().__init__(health)
 #  END Problem 6
@@ -294,7 +294,7 @@ class HungryAnt(Ant):
     name = "Hungry"
     implemented = True 
     food_cost = 4
-    chew_cooldown = 3
+    chew_cooldown = 2
 
     def __init__(self, health=1):
         """Create an Ant with a HEALTH quantity."""
@@ -497,8 +497,9 @@ class ScaryThrower(ThrowerAnt):
 
     def throw_at(self, target):
         # BEGIN Problem EC 2
-        target.scare(2)
-        super().throw_at(target)
+        if target is not None:
+            target.scare(2)
+            super().throw_at(target)
         # END Problem EC 2
 
 
@@ -745,6 +746,7 @@ class GameState:
         self.ant_types = OrderedDict((a.name, a) for a in ant_types)
         self.dimensions = dimensions
         self.active_bees = []
+        self.infinite_mode = False
         self.configure(beehive, create_places)
 
     def configure(self, beehive, create_places):
@@ -775,8 +777,34 @@ class GameState:
                 num_bees -= 1
                 self.active_bees.remove(bee)
         if num_bees == 0: # Check if player won
-            raise AntsWinException()
+            if self.infinite_mode:
+                num_bees = self.spawn_infinite_wave()
+            else:
+                raise AntsWinException()
         return num_bees
+
+    def spawn_infinite_wave(self):
+        """Generate a new wave for infinite mode with scaling health and count with caps."""
+        # Cap active bees to avoid runaway memory/CPU
+        if len(self.active_bees) >= 50:
+            return len(self.active_bees)
+        base_health = min(10, 3 + self.time // 8)
+        count = min(14, 1 + self.time // 12)
+
+        # 中后期混入更高等级的 Wasp（更高伤害），提高压力但仍受上限保护
+        if self.time >= 30:
+            new_bees = [Wasp(base_health + 1) for _ in range(count)]
+        elif self.time >= 20:
+            new_bees = [Wasp(base_health) if i % 3 == 0 else Bee(base_health) for i in range(count)]
+        else:
+            new_bees = [Bee(base_health) for _ in range(count)]
+        for bee in new_bees:
+            # 先放入蜂巢，确保 bee.place 非空，避免 GUI 装饰器访问 None
+            self.beehive.add_insect(bee)
+            entrance = random.choice(self.bee_entrances)
+            bee.move_to(entrance)
+            self.active_bees.append(bee)
+        return len(new_bees)
 
     def simulate(self):
         """Simulate an attack on the ant colony. This is called by the GUI to play the game."""
@@ -785,6 +813,7 @@ class GameState:
             while True:
                 self.beehive.strategy(self) # Bees invade from hive
                 yield None # After yielding, players have time to place ants
+                self.food += 1  # passive income each turn
                 self.ants_take_actions()
                 self.time += 1
                 yield None # After yielding, wait for throw leaf animation to play, then ask bees to take action

@@ -6,6 +6,46 @@ body{
     background-color: rgba(11, 32, 98, 0.2);
 }
 
+.control-panel{
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px 12px;
+    border-radius: 12px;
+    color: #fff;
+    z-index: 30;
+    backdrop-filter: blur(2px);
+}
+
+.control-buttons{
+    display: flex;
+    gap: 8px;
+}
+
+.control-buttons button{
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    background: rgba(30, 144, 255, 0.85);
+    color: #fff;
+    font-weight: 600;
+}
+
+.control-buttons button:hover{
+    background: rgba(25, 120, 210, 0.95);
+}
+
+.max-turn-display{
+    font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
+    font-size: 16px;
+    text-align: right;
+}
+
 
 .start-button{
     position: absolute;
@@ -144,6 +184,12 @@ body{
     position: absolute;
     width: 100%;
     pointer-events: none;
+}
+
+.shovel-btn{
+    background-color: rgba(200, 80, 20, 0.2);
+    color: #fff;
+    font-weight: 700;
 }
 
 .leaf-on-tile-img {

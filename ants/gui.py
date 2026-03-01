@@ -1,5 +1,12 @@
 import sys
-sys.path.append('libs') # Include files in the "libs" folder
+import os
+import pickle
+basedir = os.path.dirname(os.path.abspath(__file__))
+
+libs_path = os.path.join(basedir, 'libs')
+
+if libs_path not in sys.path:
+    sys.path.insert(0, libs_path)
 
 
 from flask import Flask, render_template, request, jsonify
@@ -13,6 +20,8 @@ import webbrowser
 app = Flask(__name__, static_folder='static') # Create flask app
 socketio = SocketIO(app) # Use websocket
 game, game_state = None, None # Global variable to represent a game and a gamestate
+SAVE_FILE = 'game_save.pkl'
+max_turn_record = 0
 
 
 # Disable verbose for Flask messages
@@ -22,11 +31,57 @@ def disable_verbose():
 
 
 # Create new game
-def create_new_game():
+def load_saved_game():
+    global max_turn_record
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, 'rb') as f:
+                data = pickle.load(f)
+                max_turn_record = data.get('max_turn', 0)
+                return data.get('game_state')
+        except Exception:
+            delete_saved_game()
+            max_turn_record = 0
+    return None
+
+
+def save_game_state():
+    if game_state is None:
+        return
+    with open(SAVE_FILE, 'wb') as f:
+        pickle.dump({'game_state': game_state, 'max_turn': max_turn_record}, f)
+
+
+def delete_saved_game():
+    global max_turn_record
+    if os.path.exists(SAVE_FILE):
+        os.remove(SAVE_FILE)
+    max_turn_record = 0
+
+
+def create_new_game(use_saved=True):
     """Create new game by reseting game_state and game"""
-    global game_state, game
+    global game_state, game, max_turn_record
+    if use_saved:
+        saved = load_saved_game()
+        if saved:
+            game_state = saved
+            try:
+                game = game_state.simulate()
+                return
+            except Exception:
+                delete_saved_game()
+                max_turn_record = 0
+    max_turn_record = 0
     game_state = create_game_state()
     game = game_state.simulate()
+
+
+def update_max_turn_record(turn):
+    global max_turn_record
+    if turn > max_turn_record:
+        max_turn_record = turn
+        save_game_state()
 
 
 # Automatically called by socketio when client connects to server
@@ -58,12 +113,29 @@ def initialize_game():
         'dimensions_x': game_state.dimensions[0],
         'dimensions_y': game_state.dimensions[1],
         'ant_types': [str(ant) for ant in game_state.ant_types],
+        'ant_costs': {name: ant.food_cost for name, ant in game_state.ant_types.items()},
     }
 
     wet_places = [place for place in game_state.places.values() if type(place) is Water]
 
     # Parse the names of places to figure out where they are.
     game_data['wet_places'] = [[int(place.name.split('_')[1]), int(place.name.split('_')[2])] for place in wet_places]
+
+    # Include existing insects when loading from saved game
+    insects = []
+    for place in game_state.places.values():
+        if place.is_hive or isinstance(place, AntHomeBase):
+            continue
+        row_col = place.name.split('_')[1:]
+        if place.ant:
+            insects.append({'kind': 'ant', 'name': place.ant.name, 'id': place.ant.id, 'pos': row_col})
+            # If container holds another ant, surface it visually too
+            contained = getattr(place.ant, 'ant_contained', None)
+            if contained:
+                insects.append({'kind': 'ant', 'name': contained.name, 'id': contained.id, 'pos': row_col})
+        for bee in place.bees:
+            insects.append({'kind': 'bee', 'name': bee.name, 'id': bee.id, 'pos': row_col})
+    game_data['insects'] = insects
 
     return jsonify(game_data) # Send game_data back to frontend
 
@@ -96,7 +168,13 @@ def deploy_ants():
 
 def insects_take_actions():
     """Ask insects to take actions by advancing the game. Signal frontend through socket if game ended."""
-    result = next(game)
+    try:
+        result = next(game)
+    except StopIteration:
+        return jsonify({'ended': True})
+    except Exception:
+        app.logger.exception("Error advancing game loop")
+        return jsonify({'error': 'advance_failed'}), 500
     if result is True:
         socketio.emit('endGame', {'antsWon': True})
     elif result is False:
@@ -117,22 +195,66 @@ def bees_take_actions():
 @app.route('/update_stats')
 def update_stats():
     "Send food count, turn count, and available ants to frontend."
+    update_max_turn_record(game_state.time)
     data = {
         'food': game_state.food,
         'turn': game_state.time,
-        'available_ants': [ant.name for ant in game_state.ant_types.values() if ant.food_cost <= game_state.food]
+        'available_ants': [ant.name for ant in game_state.ant_types.values() if ant.food_cost <= game_state.food],
+        'max_turn': max_turn_record,
     }
     return jsonify(data)
 
 
+@app.route('/save_state', methods=['POST'])
+def save_state():
+    save_game_state()
+    return jsonify({'saved': True})
+
+
+@app.route('/restart_game', methods=['POST'])
+def restart_game():
+    delete_saved_game()
+    create_new_game(use_saved=False)
+    return jsonify({'restarted': True})
+
+
+@app.route('/clear_cache', methods=['POST'])
+def clear_cache():
+    delete_saved_game()
+    create_new_game(use_saved=False)
+    return jsonify({'cleared': True})
+
+
+@app.route('/remove_ant', methods=['POST'])
+def remove_ant():
+    data = request.get_json()
+    pos = data.get('pos').split('-')
+    tunnel = f'tunnel_{pos[0]}_{pos[1]}'
+    removed = False
+    try:
+        game_state.remove_ant(tunnel)
+        removed = True
+    except KeyError:
+        # try water tile
+        try:
+            tunnel = f'water_{pos[0]}_{pos[1]}'
+            game_state.remove_ant(tunnel)
+            removed = True
+        except KeyError:
+            removed = False
+    if removed:
+        save_game_state()
+    return jsonify({'removed': removed})
+
+
 def move_bee(bee, place):
     "Send message to frontend to move a bee from one place to another."
+    cur_pos = bee.place.name.split('_')[1:] if bee.place else []
+    dest_pos = place.name.split('_')[1:] if place else []
     data = {
         'bee_id': bee.id,
-
-        # Not a good way to get the position. Changes should be made to Place class in ants.py
-        'destination': place.name.split('_')[1:], # [x, y] where x is row, y is col
-        'current_pos': bee.place.name.split('_')[1:],
+        'destination': dest_pos,
+        'current_pos': cur_pos,
     }
     socketio.emit('moveBee', data)
 
@@ -154,7 +276,7 @@ def insect_move_decorator(func):
     Calls corresponding GUI functions to move bee before calling the original method.
     """
     def inner(self, place):
-        if type(self.place) == Hive:
+        if self.place is None or type(self.place) == Hive:
             move_bee_from_hive(self, place)
         else:
             move_bee(self, place)

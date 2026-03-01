@@ -24,40 +24,33 @@ def make_normal_assault_plan(ants_impl=None):
     ants_impl = ants_impl or ants
     plan = AssaultPlan()
 
-    for time in range(3, 16, 2): # Adding 2 bees (1 bee for time = 3, 5) of health 3 at timestamp 3, 5, 7, 9, 11, 13, 15
-        if time == 3 or time == 5:
-            # Change number of bees to 1
+    for time in range(3, 16, 2): # ramping early bees, capped
+        if time == 3:
             plan.add_wave(ants_impl.Bee, 3, time, 1)
-        else:
+        elif time == 5:
             plan.add_wave(ants_impl.Bee, 3, time, 2)
+        else:
+            plan.add_wave(ants_impl.Bee, 3, time, 3)
 
-    for time in range(6, 13, 3): # Adding 1 Wasp of health 2 at time 6, 9, 12
-        plan.add_wave(ants_impl.Wasp, 2, time, 1)
-
-    for time in range(7, 11, 3): # Adding 1 Ninja of health 1 at time 7, 10
-        plan.add_wave(ants_impl.Wasp, 1, time, 1)
-
-    for time in range(12, 15, 2): # Adding 1 Wasp (health 3) and 1 Ninja (health 2) at time 12, 14
+    for time in range(6, 13, 3): # wasps get tougher
         plan.add_wave(ants_impl.Wasp, 3, time, 1)
-        plan.add_wave(ants_impl.Wasp, 2, time, 1)
 
-    for time in range(13, 19, 2): # Adding 2 Wasp (health 3) + 2 Ninja (health 3) at time 13, 15, 17
-        plan.add_wave(ants_impl.Wasp, 3, time, 2)
-        plan.add_wave(ants_impl.Wasp, 3, time, 2)
+    for time in range(10, 15, 2): # mid-game variety
+        plan.add_wave(ants_impl.Wasp, 4, time, 1)
 
-    for time in range(16, 23, 2): # Adding 2 bees of health 5 at timestamp 16, 18, 20, 22
-        plan.add_wave(ants_impl.Bee, 5, time, 2)
+    for time in range(16, 23, 2): # mid bees increase health/count gradually
+        plan.add_wave(ants_impl.Bee, 4, time, 2)
 
-    for time in range(24, 31, 2): # Adding 2 bees of health 6 at timestamp 24, 26, 28, 30
-        plan.add_wave(ants_impl.Bee, 6, time, 2)
+    for time in range(24, 31, 2): # late bees stronger but capped
+        plan.add_wave(ants_impl.Bee, 5, time, 3)
 
-    for time in range(20, 30, 3): # Adding 2 Ninja of health 3 at time 20, 23, 26, 29
-        plan.add_wave(ants_impl.Wasp, 3, time, 2)
+    for time in range(20, 30, 3): # tougher wasps mid-late
+        plan.add_wave(ants_impl.Wasp, 4, time, 2)
 
-    for time in range(21, 26, 2): # Adding 1 Wasp of health 5 at time 21, 23, 25
-        plan.add_wave(ants_impl.Wasp, 5, time, 1)
+    for time in range(22, 30, 4): # high-health wasps but limited count
+        plan.add_wave(ants_impl.Wasp, 6, time, 1)
 
-    for time in range(28, 31): # Adding 2 Wasp of health 6 at time 28, 29, 30
+    for time in range(28, 31): # spike but capped
         plan.add_wave(ants_impl.Wasp, 6, time, 2)
 
     plan.add_wave(ants_impl.Boss, 50, 30, 1)
@@ -191,4 +184,6 @@ def create_game_state():
     tunnel_length = 10
     dimensions = (num_tunnels, tunnel_length)
 
-    return ants.GameState(beehive, ants.ant_types(), layout, dimensions, food)
+    state = ants.GameState(beehive, ants.ant_types(), layout, dimensions, food)
+    state.infinite_mode = True
+    return state

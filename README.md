@@ -14,5 +14,5 @@ finish(without extra credit of scheme projetct) at 2025.11.25
 ### project
 - project1: Hog投骰子游戏,练习控制流、高阶函数及其在模拟游戏逻辑中的应用
 - project2: Cats打字测试,学习字符串处理、列表操作及递归算法。
-- project3: Ant(plant vs somebees)类pvz塔防,实践面向对象编程、类继承及复杂对象交互
+- project3: Ant(plant vs somebees)类pvz塔防,实践面向对象编程、类继承及复杂对象交互.
 - project4: Scheme项目,理解Scheme语言的语法和特性，使用python实现scheme编译器。
